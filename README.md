@@ -1,3 +1,28 @@
+## s390x Fork Notes
+
+This fork tracks upstream on `master` and keeps active IBM Z / LinuxONE (`s390x`, big-endian) enablement work in dedicated `k8ika0s/s390x-*` branches.
+
+### Highlights
+- Fork-local s390x remediation and validation work for this project is maintained under `k8ika0s/s390x-image-tools-remediate`.
+- Changes are intentionally architecture-scoped to avoid regressions on amd64/arm64.
+- Mainline syncs happen in this fork only; no upstream push/PR is performed from this flow.
+
+### Requirements
+- Linux host on `s390x` (RHEL/Ubuntu recommended) with `git`.
+- Docker or Podman with Buildx support.
+- Project toolchain dependencies from this repository's existing build docs.
+
+### Quick Start on s390x
+```bash
+git clone https://github.com/k8ika0s/image-tools-s390x.git
+cd image-tools-s390x
+git checkout master
+git checkout k8ika0s/s390x-image-tools-remediate
+INCLUDE_S390X=true make compilers-image llvm-image bpftool-image
+```
+
+---
+
 # Cilium Dependency Packaging
 
 This repository contains build definitions for a number of images that are components of the official and development images of Cilium.
