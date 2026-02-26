@@ -37,9 +37,18 @@ do_build="${FORCE:-false}"
 do_push="${PUSH:-false}"
 output="type=image,push=${do_push}"
 
+buildx_version="$(docker buildx version 2>/dev/null || true)"
+buildx_is_podman=false
+if grep -qi "buildah" <<<"${buildx_version}"; then
+  buildx_is_podman=true
+fi
+
 if [ "${do_push}" == "false" ]; then
   export DOCKER_HUB_PUBLIC_ACCESS_ONLY=true
   export QUAY_PUBLIC_ACCESS_ONLY=true
+  if [ "${buildx_is_podman}" = "true" ]; then
+    output=""
+  fi
 fi
 
 do_export="${EXPORT:-false}"
@@ -52,7 +61,11 @@ fi
 
 if [ "${registries[*]}" = "local" ] ; then
   echo "will build ${image_name}:${image_tag} due to local mode"
-  output="type=docker"
+  if [ "${buildx_is_podman}" = "true" ]; then
+    output=""
+  else
+    output="type=docker"
+  fi
   do_build="true"
 fi
 
@@ -118,11 +131,38 @@ fi
 do_test="${TEST:-false}"
 
 run_buildx() {
+  local build_arg_name
+  local build_arg_value
+  local build_output_args=()
   build_args=(
     "--platform=${platform}"
-    "--builder=${builder}"
     "--file=${image_dir}/Dockerfile"
   )
+  if [ "${buildx_is_podman}" = "true" ] && [[ "${platform}" == *"linux/s390x"* ]]; then
+    # Podman/netavark on s390x can intermittently fail veth setup for build containers.
+    build_args+=("--network=host")
+  fi
+  if [ -n "${output}" ] ; then
+    build_output_args+=("--output=${output}")
+  fi
+  if [ -n "${builder}" ] ; then
+    build_args+=("--builder=${builder}")
+  fi
+  for build_arg_name in \
+    TESTER_IMAGE \
+    COMPILERS_IMAGE \
+    UBUNTU_IMAGE \
+    GOLANG_IMAGE \
+    ALPINE_BASE_IMAGE \
+    BASE_IMAGE \
+    DOCKER_IMAGE \
+    CRANE_IMAGE
+  do
+    build_arg_value="${!build_arg_name:-}"
+    if [ -n "${build_arg_value}" ] ; then
+      build_args+=("--build-arg=${build_arg_name}=${build_arg_value}")
+    fi
+  done
   if [ "${with_root_context}" = "false" ] ; then
     build_args+=("${image_dir}")
   else
@@ -133,7 +173,7 @@ run_buildx() {
       exit 1
     fi
   fi
-  docker buildx build --output="${output}" "${tag_args[@]}" "${build_args[@]}"
+  docker buildx build "${build_output_args[@]}" "${tag_args[@]}" "${build_args[@]}"
 }
 
 if [ "${do_build}" = "true" ] ; then

@@ -1,13 +1,12 @@
 # Copyright Authors of Cilium
 # SPDX-License-Identifier: Apache-2.0
 
-ARG DOCKER_IMAGE=docker.io/library/docker:29.2.0-dind@sha256:a284d31e4db9a9916fd9be44380263eaeafedf0e3048a859f978922b5a0c16fc
-ARG CRANE_IMAGE=gcr.io/go-containerregistry/crane:latest@sha256:004539de370c46a99e976c1ca9570716b6096dc6ad4987c57f8c4f1a4763a819
+ARG DOCKER_IMAGE=docker.io/library/alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 ARG ALPINE_BASE_IMAGE=docker.io/library/alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 ARG GOLANG_IMAGE=docker.io/library/golang:1.26.0@sha256:c83e68f3ebb6943a2904fa66348867d108119890a2c6a2e6f07b38d0eb6c25c5
 
 FROM ${DOCKER_IMAGE} AS docker-dist
-FROM ${CRANE_IMAGE} AS crane-dist
+RUN apk add --no-cache docker-cli
 
 FROM ${GOLANG_IMAGE} AS go-builder
 
@@ -26,20 +25,27 @@ RUN apk add --no-cache \
 
 RUN mkdir -p /out/etc/apk && cp -r /etc/apk/* /out/etc/apk/
 
-RUN apk add --initdb --no-cache --root /out \
-    alpine-baselayout \
-    bash \
-    ca-certificates \
-    coreutils \
-    git \
-    make \
-    shellcheck \
-    jq \
-    yq \
-    && true
+RUN if [ "${TARGETARCH}" = "s390x" ]; then \
+      echo "Skipping shellcheck install for TARGETARCH=${TARGETARCH} (package unavailable)."; \
+      extra_pkgs=""; \
+      apk_root_opts="--initdb --no-cache --root /out --no-scripts"; \
+    else \
+      extra_pkgs="shellcheck"; \
+      apk_root_opts="--initdb --no-cache --root /out"; \
+    fi && \
+    apk add ${apk_root_opts} \
+      alpine-baselayout \
+      bash \
+      ca-certificates \
+      coreutils \
+      git \
+      make \
+      jq \
+      yq \
+      ${extra_pkgs} \
+      && true
 
-COPY --from=docker-dist /usr/local/bin /out/usr/local/bin
-COPY --from=crane-dist /ko-app/crane /out/usr/local/bin/crane
+COPY --from=docker-dist /usr/bin/docker /out/usr/local/bin/docker
 COPY --from=go-builder /out /out
 
 ARG HADOLINT_VERSION=2.12.0
@@ -47,11 +53,17 @@ ARG HADOLINT_VERSION=2.12.0
 RUN case "${TARGETARCH}" in \
     'amd64') export ARCH='x86_64' ;; \
     'arm64') export ARCH='arm64' ;; \
+    's390x') export ARCH='' ;; \
+    *) echo "Unsupported TARGETARCH for hadolint: ${TARGETARCH}" >&2; exit 1 ;; \
     esac && \
-    curl --fail --show-error --silent --location \
-    "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${ARCH}" \
-    --output /out/usr/local/bin/hadolint \
-    && chmod +x /out/usr/local/bin/hadolint
+    if [ -n "${ARCH}" ]; then \
+      curl --fail --show-error --silent --location \
+      "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${ARCH}" \
+      --output /out/usr/local/bin/hadolint \
+      && chmod +x /out/usr/local/bin/hadolint; \
+    else \
+      echo "Skipping hadolint install for TARGETARCH=${TARGETARCH} (no upstream binary available)."; \
+    fi
 
 RUN mkdir -p /out/etc/docker/cli-plugins \
     && echo '{ "experimental": "enabled", "credsStore" : "env" }' > /out/etc/docker/config.json \

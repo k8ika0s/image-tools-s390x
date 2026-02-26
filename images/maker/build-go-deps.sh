@@ -17,4 +17,5 @@ mkdir -p $GOBIN
 
 go install -ldflags '-s -w' github.com/errordeveloper/docker-credential-env@v0.1.5
 go install -ldflags '-s -w' github.com/docker/buildx/cmd/buildx@v0.13.1
+go install -ldflags '-s -w' github.com/google/go-containerregistry/cmd/crane@v0.20.8
 mv $GOBIN/buildx $GOBIN/docker-buildx

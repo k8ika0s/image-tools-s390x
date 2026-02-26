@@ -18,4 +18,8 @@ fi
 
 cd "${root_dir}"
 find . -name '*.sh' -exec shellcheck {} +
-find . -name Dockerfile -exec hadolint {} +
+if command -v hadolint >/dev/null 2>&1 ; then
+  find . -name Dockerfile -exec hadolint {} +
+else
+  echo "warning: hadolint not available in this maker image; skipping Dockerfile lint"
+fi

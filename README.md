@@ -39,6 +39,36 @@ All images are [multi-platform](https://docs.docker.com/build/building/multi-pla
 * `linux/amd64`
 * `linux/arm64`
 
+## s390x (zLinux) Fork Status
+
+This fork (`k8ika0s/image-tools-s390x`) carries local remediations used to
+produce `linux/s390x` dependency images required by `cilium-s390x` validation.
+
+### Highlights
+
+- Added opt-in `INCLUDE_S390X=true` support in `Makefile` without changing the
+  default `amd64/arm64` behavior.
+- Added `PLATFORMS=linux/s390x` dependency chaining so `compilers`, `llvm`, and
+  `bpftool` can consume locally built `image-tester`/`image-compilers` images
+  instead of pulling non-s390x manifests.
+- Added podman/buildah buildx compatibility in `scripts/build-image.sh` and
+  builder creation fallback in `Makefile`.
+- Updated `images/maker` to keep builds functional on s390x where some upstream
+  static tools are unavailable (source-built `crane`, conditional lint tools).
+- Updated `images/compilers/install-deps.sh` to use architecture-aware Ubuntu
+  source mirrors and package setup.
+
+### Host Requirements
+
+- Docker or podman/buildah-backed buildx.
+- Registry access for base images, unless fully mirrored locally.
+
+### Quick Build
+
+```bash
+INCLUDE_S390X=true PLATFORMS=linux/s390x make tester-image compilers-image llvm-image bpftool-image
+```
+
 ## Images
 
 ### [`images/maker`](images/maker/Dockerfile)
@@ -116,6 +146,46 @@ For details of how this works, see the following:
 ### Building Locally
 
 One should be able to build images locally as long as they have Docker installed with [`buildx` plug-in](https://docs.docker.com/buildx/working-with-buildx/).
+
+By default the image matrix is `linux/amd64,linux/arm64`.
+Set `INCLUDE_S390X=true` to opt in to `linux/s390x` builds without changing the
+default behavior:
+
+```bash
+INCLUDE_S390X=true make bpftool-image llvm-image compilers-image
+```
+
+When building only `linux/s390x` (`PLATFORMS=linux/s390x`), dependent image
+targets are chained automatically:
+
+- `compilers-image` builds and consumes local `image-tester:<tag>`
+- `llvm-image` and `bpftool-image` consume local `image-tester:<tag>` and
+  `image-compilers:<tag>`
+
+This avoids pulling older pinned tags that do not publish `linux/s390x`
+manifests.
+
+If needed, dependency images can still be overridden via environment variables
+that are passed as Docker build args:
+
+```bash
+TESTER_IMAGE
+COMPILERS_IMAGE
+UBUNTU_IMAGE
+GOLANG_IMAGE
+ALPINE_BASE_IMAGE
+BASE_IMAGE
+DOCKER_IMAGE
+```
+
+Example:
+
+```bash
+INCLUDE_S390X=true \
+PLATFORMS=linux/s390x \
+TESTER_IMAGE=registry.internal/image-tester:s390x \
+make compilers-image
+```
 
 ### Updating `images/{maker,compilers}`
 
